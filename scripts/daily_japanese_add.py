@@ -37,9 +37,38 @@ Environment:
     (default: the skill's own directory)
   - ANKI_URL: AnkiConnect endpoint (default: http://localhost:8765)
 """
-import argparse
+import os
 import sys
-from pathlib import Path
+
+
+def _ensure_venv_interpreter() -> None:
+    """Re-exec under the skill's venv when runtime deps aren't importable here.
+
+    The documented entrypoint is `python3 daily_japanese_add.py`, but deps like
+    pykakasi live in the venv created by install.sh (default ~/.venvs/edge-tts).
+    Run under a bare system python3 that lacks them, this transparently re-execs
+    with the venv's interpreter instead of failing with
+    `No module named 'pykakasi'`. Honors EDGE_TTS_VENV; guards against re-exec
+    loops via DAILY_JP_REEXEC.
+    """
+    try:
+        import pykakasi  # noqa: F401
+        return  # current interpreter already has what we need
+    except ModuleNotFoundError:
+        pass
+    if os.environ.get("DAILY_JP_REEXEC") == "1":
+        return  # already re-exec'd once; let the real import fail clearly
+    venv = os.path.expanduser(os.environ.get("EDGE_TTS_VENV", "~/.venvs/edge-tts"))
+    venv_py = os.path.join(venv, "bin", "python")
+    if os.path.exists(venv_py) and os.path.realpath(venv_py) != os.path.realpath(sys.executable):
+        os.environ["DAILY_JP_REEXEC"] = "1"
+        os.execv(venv_py, [venv_py, os.path.abspath(__file__), *sys.argv[1:]])
+
+
+_ensure_venv_interpreter()
+
+import argparse  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 # Allow `python3 scripts/daily_japanese_add.py` from any cwd
 sys.path.insert(0, str(Path(__file__).resolve().parent))

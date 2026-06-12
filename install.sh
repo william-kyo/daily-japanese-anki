@@ -27,6 +27,21 @@ echo "==> Installing Python dependencies"
 "${EDGE_TTS_VENV}/bin/pip" install --quiet --upgrade pip
 "${EDGE_TTS_VENV}/bin/pip" install --quiet -r "${SCRIPT_DIR}/requirements.txt"
 
+echo "==> Verifying imports in venv"
+if "${EDGE_TTS_VENV}/bin/python" - <<'PY'
+import importlib, sys
+missing = [m for m in ("pykakasi", "edge_tts", "bs4", "requests")
+           if importlib.util.find_spec(m) is None]
+if missing:
+    print("    MISSING: " + ", ".join(missing))
+    sys.exit(1)
+print("    OK — pykakasi, edge_tts, bs4, requests all importable.")
+PY
+then :; else
+  echo "    Dependency verification failed. Re-run: ${EDGE_TTS_VENV}/bin/pip install -r ${SCRIPT_DIR}/requirements.txt" >&2
+  exit 1
+fi
+
 # 2. make scripts executable -------------------------------------------------
 chmod +x "${SCRIPT_DIR}/scripts/"*.sh 2>/dev/null || true
 
