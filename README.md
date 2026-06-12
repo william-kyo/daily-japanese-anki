@@ -15,15 +15,24 @@ Each entry becomes **one Vocabulary card + one Sentence card** sharing a single 
 ## Install
 
 ```bash
-git clone https://github.com/<you>/daily-japanese-anki.git \
+git clone https://github.com/william-kyo/daily-japanese-anki.git \
   ~/.agents/skills/daily-japanese-anki
 cd ~/.agents/skills/daily-japanese-anki
 ./install.sh
 ```
 
-`install.sh` creates a venv at `~/.venvs/edge-tts` (override with `EDGE_TTS_VENV=/path ./install.sh`), installs the Python deps, and checks that AnkiConnect is reachable.
+`install.sh` creates a venv at `~/.venvs/edge-tts` (override with `EDGE_TTS_VENV=/path ./install.sh`), installs the Python deps, symlinks the skill into Claude Code's skill dir, and checks that AnkiConnect is reachable.
 
-Claude Code auto-discovers any skill folder under `~/.agents/skills/` or `~/.claude/skills/`, so once cloned the skill is available — just make sure Anki is open.
+### Skill discovery (Claude Code vs opencode)
+
+The two tools look in different places, so the canonical clone lives in the shared `~/.agents/skills/` and `install.sh` bridges the gap:
+
+| Tool | Reads from | Needs a link? |
+|---|---|---|
+| **opencode** | `~/.agents/skills/`, `~/.claude/skills/`, `~/.config/opencode/skills/` | No — finds `~/.agents/skills/` directly |
+| **Claude Code** | `~/.claude/skills/` only | Yes — `install.sh` creates `~/.claude/skills/daily-japanese-anki → <repo>` |
+
+One symlink at `~/.claude/skills/<name>` satisfies both tools (opencode reads that path too). If you clone somewhere other than `~/.agents/skills/`, the symlink points at wherever you actually cloned. Restart the tool after install so it re-scans skills.
 
 ## Usage
 

@@ -30,7 +30,31 @@ echo "==> Installing Python dependencies"
 # 2. make scripts executable -------------------------------------------------
 chmod +x "${SCRIPT_DIR}/scripts/"*.sh 2>/dev/null || true
 
-# 3. AnkiConnect reachability check -----------------------------------------
+# 3. link into Claude Code's skill dir ---------------------------------------
+# Skill discovery differs per tool:
+#   opencode     reads ~/.agents/skills, ~/.claude/skills, ~/.config/opencode/skills
+#   Claude Code  reads ONLY ~/.claude/skills
+# So a single symlink at ~/.claude/skills/<name> makes the skill visible to
+# both tools, wherever the repo was actually cloned.
+SKILL_NAME="$(basename "$SCRIPT_DIR")"
+CLAUDE_SKILLS_DIR="${CLAUDE_SKILLS_DIR:-${HOME}/.claude/skills}"
+LINK="${CLAUDE_SKILLS_DIR}/${SKILL_NAME}"
+
+echo "==> Linking into Claude Code skill dir"
+mkdir -p "$CLAUDE_SKILLS_DIR"
+if [[ "$LINK" -ef "$SCRIPT_DIR" ]]; then
+  echo "    OK — already resolves to this repo."
+elif [[ -L "$LINK" ]]; then
+  ln -sfn "$SCRIPT_DIR" "$LINK"
+  echo "    relinked $LINK -> $SCRIPT_DIR"
+elif [[ -e "$LINK" ]]; then
+  echo "    SKIP — $LINK exists and is not a symlink; leaving it untouched."
+else
+  ln -s "$SCRIPT_DIR" "$LINK"
+  echo "    linked $LINK -> $SCRIPT_DIR"
+fi
+
+# 4. AnkiConnect reachability check -----------------------------------------
 echo "==> Checking AnkiConnect at ${ANKI_URL}"
 if curl -s --fail --max-time 3 "$ANKI_URL" \
      -d '{"action":"version","version":6}' >/dev/null 2>&1; then
