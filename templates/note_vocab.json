@@ -1,0 +1,18 @@
+{
+  "deckName": "Daily Japanese",
+  "modelName": "iKnow! Vocabulary",
+  "fields": {
+    "Expression": "<the word/phrase>",
+    "Meaning": "<simple Japanese explanation, N3 or below>",
+    "Reading": "<kana, usually identical to Expression>",
+    "Audio": "[sound:iknow-<id>-vocab.mp3]",
+    "Image_URI": "<img src=\"iknow-<id>-image.png\">",
+    "iKnowID": "<id>",
+    "iKnowType": "V"
+  },
+  "tags": ["<id>"],
+  "options": {
+    "allowDuplicate": false,
+    "duplicateScope": "deck"
+  }
+}

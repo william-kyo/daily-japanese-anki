@@ -1,0 +1,18 @@
+{
+  "deckName": "Daily Japanese",
+  "modelName": "iKnow! Sentences",
+  "fields": {
+    "Expression": "<the example sentence>",
+    "Meaning": "",
+    "Reading": "<kana with spaces between words, e.g. じゅうぎょういん に ストレス を かけて>",
+    "Audio": "[sound:iknow-<id>-sentence.mp3]",
+    "Image_URI": "<img src=\"iknow-<id>-image.png\">",
+    "iKnowID": "<id>",
+    "iKnowType": "S"
+  },
+  "tags": ["<id>"],
+  "options": {
+    "allowDuplicate": false,
+    "duplicateScope": "deck"
+  }
+}

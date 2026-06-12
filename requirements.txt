@@ -1,0 +1,7 @@
+# Python dependencies for the daily-japanese-anki skill.
+# Installed into a dedicated venv by install.sh (default: ~/.venvs/edge-tts).
+
+edge-tts        # Japanese TTS audio (ja-JP-NanamiNeural)
+pykakasi        # kanji/katakana -> hiragana reading conversion
+beautifulsoup4  # parse search-result HTML in image-search-download.sh
+requests        # fetch candidate images in image-search-download.sh
