@@ -45,6 +45,18 @@ python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
   --image-query "couple argument"
 ```
 
+When you already have a sentence audio URL (e.g. a native recording), pass `--sentence-audio-url` to download it instead of generating TTS for the sentence:
+
+```bash
+python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
+  --expression "やわらげる" \
+  --meaning "激しい感情を穏やかにする" \
+  --sentence "僕は奥さんの怒りを和らげた。" \
+  --reading-sentence "ぼく は おくさん の いかり を やわらげた。" \
+  --sentence-audio-url "https://example.com/sentence.mp3" \
+  --image-query "couple argument"
+```
+
 For visually-iconic words where the helper can't find an illustration, drop the image entirely:
 
 ```bash
@@ -72,7 +84,7 @@ python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
 
 1. _(Optional, `--ensure-deck`)_ `ensure_deck()` — `createDeck("Daily Japanese")` (idempotent) followed by a `getDeckConfig` probe to dodge the AnkiConnect cache-flush race (pitfall #14). Only needed on a fresh Anki install.
 2. **Resolve iKnowID** — query Anki for the largest existing `iKnowID` value, use `max + 1` (or 1 if none exist). No state file is read or written.
-3. **TTS** for vocab and sentence via `scripts/tts-ja.sh -o ~/tts-output/iknow-<id>-vocab.mp3 "<Expression>"` and the same for the sentence.
+3. **TTS** for vocab and sentence via `scripts/tts-ja.sh -o ~/tts-output/iknow-<id>-vocab.mp3 "<Expression>"` and the same for the sentence. If `--sentence-audio-url` is given, the sentence audio is **downloaded** from that URL instead of TTS-generated (vocab audio is still TTS). The downloaded file is saved as `iknow-<id>-sentence.mp3`, so the note's `Audio` field is unchanged.
 4. **Image search** via `scripts/image-search-download.sh`, trying each source in `IMAGE_SOURCE_ORDER = ["irasutoya", "commons", "pixabay", "pexels"]` until one returns a usable file. **Hard cap: 2 attempts.** After 2 consecutive failures the script logs a warning and proceeds with no image at all — do not retry endlessly, and do not stop the run. `--no-image` skips this step entirely.
 5. **Media import** into Anki via `storeMediaFile`: image (if found) as `iknow-<id>-image.png`, then both `.mp3` files. Use `.png` extension to be safe even if the source is `.jpg`/`.webp`.
 6. **addNote** for the V and S notes. `allowDuplicate=False`, `duplicateScope="deck"`.
@@ -115,7 +127,7 @@ If you want the scripts in a different location, override the workspace root wit
 ## Templates and scripts
 
 - `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Auto iKnowID from state, image search by default (`--no-image` to skip), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card.**
-- `scripts/anki_vocab_lib.py` — the library: `add_card_pair()`, `find_image()`, `generate_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import this if you're wiring Anki ops into a different driver (tests, bulk import, cron).
+- `scripts/anki_vocab_lib.py` — the library: `add_card_pair()`, `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import this if you're wiring Anki ops into a different driver (tests, bulk import, cron).
 - `templates/note_vocab.json` and `templates/note_sentence.json` — exact field shapes to copy.
 - `references/troubleshooting.md` — failure transcripts and detailed recovery recipes (irasutoya atom feed, ffmpeg resize, etc.).
 
@@ -134,6 +146,7 @@ add_card_pair(
     # skip_image=False,          # True for text-only (pitfall #13)
     # ensure_deck_first=False,   # True on fresh Anki install (pitfall #12)
     # sync_after=True,           # False for batch runs
+    # sentence_audio_url=None,   # download sentence audio instead of TTS
 )
 ```
 

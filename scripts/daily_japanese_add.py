@@ -24,6 +24,8 @@ Notes:
   - --iKnowID is optional; if omitted the next available id is computed at
     runtime by querying Anki for the largest existing iKnowID (max + 1).
     No state file is read or written.
+  - --sentence-audio-url downloads the sentence audio from the given URL
+    instead of generating it via TTS (the vocab audio is still TTS-generated).
   - --no-image skips the image search entirely (saves ~5s of HTTP probes,
     and is the right call for words that have no iconic illustration).
   - --no-sync skips the final Anki sync (handy for batch runs that sync
@@ -90,6 +92,10 @@ def main() -> int:
                         "(required unless --no-image is set)")
     p.add_argument("--iKnowID", type=int, default=None,
                    help="explicit iKnowID (else read from state)")
+    p.add_argument("--sentence-audio-url", default=None,
+                   help="URL of a pre-existing sentence audio file. When set, "
+                        "the sentence audio is downloaded from this URL instead "
+                        "of generated via TTS (vocab audio is still TTS).")
     p.add_argument("--no-image", action="store_true",
                    help="skip image search entirely (text-only card)")
     p.add_argument("--no-sync", action="store_true",
@@ -113,6 +119,7 @@ def main() -> int:
             skip_image=args.no_image,
             ensure_deck_first=args.ensure_deck,
             sync_after=not args.no_sync,
+            sentence_audio_url=args.sentence_audio_url,
         )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)

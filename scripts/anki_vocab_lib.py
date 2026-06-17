@@ -120,6 +120,23 @@ def generate_audio(out_path: Path, text: str) -> Path:
     return out_path
 
 
+def download_audio(url: str, out_path: Path) -> Path:
+    """Download a pre-existing audio file to out_path. Returns out_path.
+
+    Used when the caller already has a sentence audio URL (e.g. from a source
+    that ships native recordings) and wants to skip TTS generation entirely.
+    Raises on HTTP error or empty body so the failure is loud, not silent.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "daily-japanese-anki/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = r.read()
+    if not data:
+        raise RuntimeError(f"download_audio({url}) returned an empty body")
+    out_path.write_bytes(data)
+    return out_path
+
+
 # ---------------------------------------------------------------------------
 # Image search (with 2-strike fallback)
 # ---------------------------------------------------------------------------
@@ -328,6 +345,7 @@ def add_card_pair(
     skip_image: bool = False,
     ensure_deck_first: bool = False,
     sync_after: bool = True,
+    sentence_audio_url: Optional[str] = None,
 ) -> dict:
     """End-to-end: optionally ensure deck → TTS → image (with 2-strike
     fallback) → media → notes → sync.
@@ -342,6 +360,10 @@ def add_card_pair(
       - `ensure_deck_first=True` calls `ensure_deck()` to (idempotently)
         create `Daily Japanese` and flush AnkiConnect's deck cache. Default
         is False because the deck almost always already exists.
+      - `sentence_audio_url` (when set) downloads the sentence audio from
+        that URL instead of generating it with TTS. The vocab audio is still
+        TTS-generated. The downloaded file is saved/imported under the same
+        `iknow-<id>-sentence.mp3` name, so the note field is unchanged.
     """
     iknow_id = next_iknow_id(i_know_id)
     print(f"[id] using iKnowID={iknow_id}")
@@ -350,12 +372,18 @@ def add_card_pair(
         print(f"[deck] ensure_deck({DECK!r})")
         ensure_deck()
 
-    # 1. TTS
-    print("[tts] generating audio...")
+    # 1. Audio: vocab is always TTS; sentence is downloaded when a URL is
+    #    supplied, otherwise TTS-generated.
     vocab_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-vocab.mp3"
     sent_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-sentence.mp3"
+    print("[tts] generating vocab audio...")
     generate_audio(vocab_mp3, expression)
-    generate_audio(sent_mp3, sentence)
+    if sentence_audio_url:
+        print(f"[audio] downloading sentence audio from {sentence_audio_url}")
+        download_audio(sentence_audio_url, sent_mp3)
+    else:
+        print("[tts] generating sentence audio...")
+        generate_audio(sent_mp3, sentence)
 
     # 2. Image
     image_media: Optional[str] = None
