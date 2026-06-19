@@ -256,7 +256,19 @@ def _existing_iknow_ids() -> list[int]:
 
 
 def next_iknow_id_from_anki() -> int:
-    """Return max(existing iKnowIDs in Anki) + 1, or 1 if none exist."""
+    """Return max(existing iKnowIDs in Anki) + 1, or 1 if none exist.
+
+    Syncs Anki first so that iKnowIDs created on other devices are pulled in
+    before we compute the next id. Without this, a note added on another device
+    (but not yet synced locally) would be invisible here, and we'd reuse its id
+    and collide. The sync is best-effort: if it fails (e.g. offline, no sync
+    configured) we fall back to the local collection rather than blocking.
+    """
+    try:
+        print("[sync] syncing Anki before reading iKnowIDs...")
+        sync()
+    except Exception as e:  # noqa: BLE001 - best-effort, never block id lookup
+        print(f"[sync] pre-read sync failed ({e}); using local collection")
     ids = _existing_iknow_ids()
     nxt = (max(ids) + 1) if ids else 1
     print(f"[id] queried Anki: {len(ids)} existing iKnowID(s), next = {nxt}")
