@@ -57,6 +57,23 @@ python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
   --image-query "couple argument"
 ```
 
+**Image resolution mirrors audio.** There are three states, and the default is *search*, not skip:
+
+| You pass | Behavior |
+|----------|----------|
+| `--image-url URL` | download that exact image |
+| `--image-query "..."` (no URL) | run the existing image-search tool and save the result |
+| `--no-image` | skip the image (text-only card) |
+
+So **if you don't pass an image URL, the image is still searched and saved via `--image-query`** — only `--no-image` skips it. `--image-url` makes `--image-query` optional. Example with a specific image:
+
+```bash
+python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
+  --expression "芥川" \
+  --meaning "文学や芸術で名声を得た人の名字。" \
+  --image-url "https://upload.wikimedia.org/.../Akutagawa.jpg"
+```
+
 For visually-iconic words where the helper can't find an illustration, drop the image entirely:
 
 ```bash
@@ -152,8 +169,8 @@ If you want the scripts in a different location, override the workspace root wit
 
 ## Templates and scripts
 
-- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Card shape (V / S / V+S) is **auto-detected** from which args you pass. Auto iKnowID from Anki, image search by default (`--no-image` to skip), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card — never write a throwaway driver script.**
-- `scripts/anki_vocab_lib.py` — the library. One unified pipeline `add_cards(expression?, meaning?, sentence?, reading_sentence?, ...)` builds whichever of V/S is requested; `add_card_pair()`, `add_vocab_only()`, `add_sentence_only()` are thin wrappers over it. Also `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import only for tests/bulk/cron — for a single card, use the CLI.
+- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Card shape (V / S / V+S) is **auto-detected** from which args you pass. Auto iKnowID from Anki; image is **searched by default** via `--image-query`, or pass `--image-url` for a specific image, or `--no-image` to skip; `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card — never write a throwaway driver script.**
+- `scripts/anki_vocab_lib.py` — the library. One unified pipeline `add_cards(expression?, meaning?, sentence?, reading_sentence?, image_query?, image_url?, ...)` builds whichever of V/S is requested; `add_card_pair()`, `add_vocab_only()`, `add_sentence_only()` are thin wrappers over it. Also `find_image()`, `generate_audio()`, `download_audio()`, `download_image()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import only for tests/bulk/cron — for a single card, use the CLI.
 - `templates/note_vocab.json` and `templates/note_sentence.json` — exact field shapes to copy.
 - `references/troubleshooting.md` — failure transcripts and detailed recovery recipes (irasutoya atom feed, ffmpeg resize, etc.).
 

@@ -45,8 +45,11 @@ Notes:
     No state file is read or written.
   - --sentence-audio-url downloads the sentence audio from the given URL
     instead of generating it via TTS (the vocab audio is still TTS-generated).
-  - --no-image skips the image search entirely (saves ~5s of HTTP probes,
-    and is the right call for words that have no iconic illustration).
+  - --image-url downloads a specific image from the given URL instead of
+    searching. If omitted, the image is still found via --image-query (the
+    existing search tool) and saved — a missing URL does NOT skip the image.
+  - --no-image is the only way to skip the image entirely (text-only card;
+    saves ~5s of HTTP probes, right for words with no iconic illustration).
   - --no-sync skips the final Anki sync (handy for batch runs that sync
     once at the end).
   - --ensure-deck calls createDeck + getDeckConfig probe to dodge the
@@ -111,8 +114,13 @@ def main() -> int:
                    help="kana reading of the sentence with spaces between words. "
                         "Pair with --sentence to build an S card.")
     p.add_argument("--image-query", default=None,
-                   help="search query for the illustration "
-                        "(required unless --no-image is set)")
+                   help="search query for the illustration. Required unless "
+                        "--no-image or --image-url is set. When given (and no "
+                        "--image-url), the existing image-search tool runs.")
+    p.add_argument("--image-url", default=None,
+                   help="URL of a specific image to use. When set, it is "
+                        "downloaded directly instead of searching. If omitted, "
+                        "the image is found via --image-query (search), not skipped.")
     p.add_argument("--iKnowID", type=int, default=None,
                    help="explicit iKnowID (else read from state)")
     p.add_argument("--sentence-audio-url", default=None,
@@ -120,7 +128,7 @@ def main() -> int:
                         "the sentence audio is downloaded from this URL instead "
                         "of generated via TTS (vocab audio is still TTS).")
     p.add_argument("--no-image", action="store_true",
-                   help="skip image search entirely (text-only card)")
+                   help="skip the image entirely (text-only card)")
     p.add_argument("--no-sync", action="store_true",
                    help="skip the final Anki sync")
     p.add_argument("--ensure-deck", action="store_true",
@@ -128,8 +136,8 @@ def main() -> int:
                         "before addNote. Only needed on a fresh Anki install.")
     args = p.parse_args()
 
-    if not args.no_image and not args.image_query:
-        p.error("--image-query is required unless --no-image is set")
+    if not args.no_image and not args.image_query and not args.image_url:
+        p.error("--image-query is required unless --no-image or --image-url is set")
 
     # Card shape is auto-detected from which args are supplied. Each side must
     # be given as a complete pair; at least one complete card is required.
@@ -144,6 +152,8 @@ def main() -> int:
                 "(--sentence --reading-sentence), or both")
     if args.sentence_audio_url and not want_s:
         p.error("--sentence-audio-url requires --sentence/--reading-sentence")
+    if args.image_url and args.no_image:
+        p.error("--image-url and --no-image are mutually exclusive")
 
     try:
         result = lib.add_cards(
@@ -157,6 +167,7 @@ def main() -> int:
             ensure_deck_first=args.ensure_deck,
             sync_after=not args.no_sync,
             sentence_audio_url=args.sentence_audio_url,
+            image_url=args.image_url,
         )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)

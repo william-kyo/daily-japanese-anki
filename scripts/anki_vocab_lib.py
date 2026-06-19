@@ -120,21 +120,35 @@ def generate_audio(out_path: Path, text: str) -> Path:
     return out_path
 
 
-def download_audio(url: str, out_path: Path) -> Path:
-    """Download a pre-existing audio file to out_path. Returns out_path.
-
-    Used when the caller already has a sentence audio URL (e.g. from a source
-    that ships native recordings) and wants to skip TTS generation entirely.
-    Raises on HTTP error or empty body so the failure is loud, not silent.
-    """
+def _download_to_file(url: str, out_path: Path) -> Path:
+    """Download `url` to `out_path`, returning it. Raises on HTTP error or an
+    empty body so failures are loud, not silent. Content-type agnostic."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(url, headers={"User-Agent": "daily-japanese-anki/1.0"})
     with urllib.request.urlopen(req, timeout=30) as r:
         data = r.read()
     if not data:
-        raise RuntimeError(f"download_audio({url}) returned an empty body")
+        raise RuntimeError(f"download({url}) returned an empty body")
     out_path.write_bytes(data)
     return out_path
+
+
+def download_audio(url: str, out_path: Path) -> Path:
+    """Download a pre-existing audio file to out_path. Returns out_path.
+
+    Used when the caller already has a sentence audio URL (e.g. from a source
+    that ships native recordings) and wants to skip TTS generation entirely.
+    """
+    return _download_to_file(url, out_path)
+
+
+def download_image(url: str, out_path: Path) -> Path:
+    """Download an image directly from `url` to out_path. Returns out_path.
+
+    Used when the caller already has an image URL and wants to skip the
+    `find_image` search. The bytes are written as-is under the `.png` name
+    (Anki renders by content, not extension — matching the search path)."""
+    return _download_to_file(url, out_path)
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +404,7 @@ def add_cards(
     ensure_deck_first: bool = False,
     sync_after: bool = True,
     sentence_audio_url: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> dict:
     """Unified end-to-end pipeline for ALL three card shapes under one iKnowID:
 
@@ -404,8 +419,14 @@ def add_cards(
     Returns a summary dict with `vocab_note_id` / `sentence_note_id` set to the
     new note id, or None for a side that wasn't built.
 
+    Image resolution (shared by both notes):
+      - `skip_image=True` is the ONLY way to skip the image (text-only card).
+      - else if `image_url` is set, download it directly.
+      - else if `image_query` is set, search via `find_image` (existing tool,
+        2-strike fallback) and save. NOT passing a URL falls back to search —
+        it does not skip.
+
     Args:
-      - `skip_image=True` bypasses image search entirely (text-only card).
       - `ensure_deck_first=True` runs `ensure_deck()` (idempotent) to create
         `Daily Japanese` and flush AnkiConnect's deck cache. Rarely needed.
       - `sentence_audio_url` (when set) downloads the sentence audio from that
@@ -448,17 +469,26 @@ def add_cards(
             print("[tts] generating sentence audio...")
             generate_audio(sent_mp3, sentence)
 
-    # 2. Image (shared by both notes)
+    # 2. Image (shared by both notes). Mirrors the audio design: a direct URL
+    #    is downloaded; otherwise we fall back to the existing search tool.
+    #    Only skip_image (--no-image) skips — a missing URL never skips.
     image_media: Optional[str] = None
-    if skip_image or not image_query:
-        print("[image] skipped (no image query or --no-image)")
-    else:
+    img_path: Optional[Path] = None
+    if skip_image:
+        print("[image] skipped (--no-image)")
+    elif image_url:
+        print(f"[image] downloading from {image_url}")
+        img_path = download_image(image_url, IMG_OUT_DIR / f"iknow-{iknow_id}-image.png")
+    elif image_query:
         img_path = find_image(image_query)
-        if img_path is not None:
-            print(f"[image] importing {img_path}")
-            image_media = store_media(f"iknow-{iknow_id}-image.png", img_path)
-        else:
+        if img_path is None:
             print(f"[image] no image for {image_query!r}; cards will have no image")
+    else:
+        print("[image] no image_url or image_query given; cards will have no image")
+
+    if img_path is not None:
+        print(f"[image] importing {img_path}")
+        image_media = store_media(f"iknow-{iknow_id}-image.png", img_path)
 
     # 3. Audio media
     print("[media] importing audio...")
@@ -505,6 +535,7 @@ def add_card_pair(
     ensure_deck_first: bool = False,
     sync_after: bool = True,
     sentence_audio_url: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> dict:
     """Add a V + S card pair. Thin wrapper over `add_cards()`."""
     return add_cards(
@@ -512,7 +543,7 @@ def add_card_pair(
         sentence=sentence, reading_sentence=reading_sentence,
         image_query=image_query, i_know_id=i_know_id, skip_image=skip_image,
         ensure_deck_first=ensure_deck_first, sync_after=sync_after,
-        sentence_audio_url=sentence_audio_url,
+        sentence_audio_url=sentence_audio_url, image_url=image_url,
     )
 
 
@@ -524,12 +555,14 @@ def add_vocab_only(
     skip_image: bool = False,
     ensure_deck_first: bool = False,
     sync_after: bool = True,
+    image_url: Optional[str] = None,
 ) -> dict:
     """Add a Vocabulary (V) card only. Thin wrapper over `add_cards()`."""
     return add_cards(
         expression=expression, meaning=meaning, image_query=image_query,
         i_know_id=i_know_id, skip_image=skip_image,
         ensure_deck_first=ensure_deck_first, sync_after=sync_after,
+        image_url=image_url,
     )
 
 
@@ -542,11 +575,12 @@ def add_sentence_only(
     ensure_deck_first: bool = False,
     sync_after: bool = True,
     sentence_audio_url: Optional[str] = None,
+    image_url: Optional[str] = None,
 ) -> dict:
     """Add a Sentence (S) card only. Thin wrapper over `add_cards()`."""
     return add_cards(
         sentence=sentence, reading_sentence=reading_sentence,
         image_query=image_query, i_know_id=i_know_id, skip_image=skip_image,
         ensure_deck_first=ensure_deck_first, sync_after=sync_after,
-        sentence_audio_url=sentence_audio_url,
+        sentence_audio_url=sentence_audio_url, image_url=image_url,
     )
