@@ -379,60 +379,79 @@ def add_note(note: dict) -> int:
 # ---------------------------------------------------------------------------
 # Top-level pipeline
 # ---------------------------------------------------------------------------
-def add_card_pair(
-    expression: str,
-    meaning: str,
-    sentence: str,
-    reading_sentence: str,
-    image_query: str,
+def add_cards(
+    expression: Optional[str] = None,
+    meaning: Optional[str] = None,
+    sentence: Optional[str] = None,
+    reading_sentence: Optional[str] = None,
+    image_query: Optional[str] = None,
     i_know_id: Optional[int] = None,
     skip_image: bool = False,
     ensure_deck_first: bool = False,
     sync_after: bool = True,
     sentence_audio_url: Optional[str] = None,
 ) -> dict:
-    """End-to-end: optionally ensure deck → TTS → image (with 2-strike
-    fallback) → media → notes → sync.
+    """Unified end-to-end pipeline for ALL three card shapes under one iKnowID:
 
-    Returns a small summary dict the caller can render. `i_know_id` of None
-    reads the next available id from state and increments the file.
+      - V only:  pass `expression` + `meaning`
+      - S only:  pass `sentence` + `reading_sentence`
+      - V + S:   pass all four
+
+    Steps: optional ensure-deck → TTS (per requested side) → image (shared,
+    2-strike fallback) → media → notes → sync. Whatever isn't requested is
+    simply skipped — there is one code path, so V/S/V+S never drift.
+
+    Returns a summary dict with `vocab_note_id` / `sentence_note_id` set to the
+    new note id, or None for a side that wasn't built.
 
     Args:
-      - `skip_image=True` bypasses the image search entirely (useful for
-        test runs or when the user already knows the image field should
-        stay empty).
-      - `ensure_deck_first=True` calls `ensure_deck()` to (idempotently)
-        create `Daily Japanese` and flush AnkiConnect's deck cache. Default
-        is False because the deck almost always already exists.
-      - `sentence_audio_url` (when set) downloads the sentence audio from
-        that URL instead of generating it with TTS. The vocab audio is still
-        TTS-generated. The downloaded file is saved/imported under the same
-        `iknow-<id>-sentence.mp3` name, so the note field is unchanged.
+      - `skip_image=True` bypasses image search entirely (text-only card).
+      - `ensure_deck_first=True` runs `ensure_deck()` (idempotent) to create
+        `Daily Japanese` and flush AnkiConnect's deck cache. Rarely needed.
+      - `sentence_audio_url` (when set) downloads the sentence audio from that
+        URL instead of TTS. Only meaningful when a sentence is requested.
+
+    Raises ValueError if neither a complete V nor a complete S is specified.
     """
+    want_v = bool(expression) and bool(meaning)
+    want_s = bool(sentence) and bool(reading_sentence)
+    if not want_v and not want_s:
+        raise ValueError(
+            "add_cards needs at least one complete card: a V (expression+meaning) "
+            "or an S (sentence+reading_sentence)."
+        )
+    if sentence_audio_url and not want_s:
+        raise ValueError("sentence_audio_url given but no sentence card requested.")
+
+    shape = "V+S" if (want_v and want_s) else ("V" if want_v else "S")
     iknow_id = next_iknow_id(i_know_id)
-    print(f"[id] using iKnowID={iknow_id}")
+    print(f"[id] using iKnowID={iknow_id} (shape={shape})")
 
     if ensure_deck_first:
         print(f"[deck] ensure_deck({DECK!r})")
         ensure_deck()
 
-    # 1. Audio: vocab is always TTS; sentence is downloaded when a URL is
-    #    supplied, otherwise TTS-generated.
+    # 1. Audio — vocab is always TTS; sentence is downloaded when a URL is
+    #    supplied, otherwise TTS-generated. Only the requested sides run.
     vocab_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-vocab.mp3"
     sent_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-sentence.mp3"
-    print("[tts] generating vocab audio...")
-    generate_audio(vocab_mp3, expression)
-    if sentence_audio_url:
-        print(f"[audio] downloading sentence audio from {sentence_audio_url}")
-        download_audio(sentence_audio_url, sent_mp3)
-    else:
-        print("[tts] generating sentence audio...")
-        generate_audio(sent_mp3, sentence)
+    if want_v:
+        assert expression is not None
+        print("[tts] generating vocab audio...")
+        generate_audio(vocab_mp3, expression)
+    if want_s:
+        assert sentence is not None
+        if sentence_audio_url:
+            print(f"[audio] downloading sentence audio from {sentence_audio_url}")
+            download_audio(sentence_audio_url, sent_mp3)
+        else:
+            print("[tts] generating sentence audio...")
+            generate_audio(sent_mp3, sentence)
 
-    # 2. Image
+    # 2. Image (shared by both notes)
     image_media: Optional[str] = None
-    if skip_image:
-        print("[image] skipped (--no-image)")
+    if skip_image or not image_query:
+        print("[image] skipped (no image query or --no-image)")
     else:
         img_path = find_image(image_query)
         if img_path is not None:
@@ -443,15 +462,21 @@ def add_card_pair(
 
     # 3. Audio media
     print("[media] importing audio...")
-    store_media(f"iknow-{iknow_id}-vocab.mp3", vocab_mp3)
-    store_media(f"iknow-{iknow_id}-sentence.mp3", sent_mp3)
+    if want_v:
+        store_media(f"iknow-{iknow_id}-vocab.mp3", vocab_mp3)
+    if want_s:
+        store_media(f"iknow-{iknow_id}-sentence.mp3", sent_mp3)
 
     # 4. Notes
     print("[notes] adding cards...")
-    v_note = build_vocab_note(iknow_id, expression, meaning, image_media)
-    s_note = build_sentence_note(iknow_id, sentence, reading_sentence, image_media)
-    v_id = add_note(v_note)
-    s_id = add_note(s_note)
+    v_id: Optional[int] = None
+    s_id: Optional[int] = None
+    if want_v:
+        assert expression is not None and meaning is not None
+        v_id = add_note(build_vocab_note(iknow_id, expression, meaning, image_media))
+    if want_s:
+        assert sentence is not None and reading_sentence is not None
+        s_id = add_note(build_sentence_note(iknow_id, sentence, reading_sentence, image_media))
     print(f"[notes] vocab id={v_id}, sentence id={s_id}")
 
     # 5. Sync
@@ -467,6 +492,30 @@ def add_card_pair(
     }
 
 
+# Backward-compatible thin wrappers over add_cards(). Existing callers and the
+# documented `add_card_pair()` entry keep working unchanged.
+def add_card_pair(
+    expression: str,
+    meaning: str,
+    sentence: str,
+    reading_sentence: str,
+    image_query: str,
+    i_know_id: Optional[int] = None,
+    skip_image: bool = False,
+    ensure_deck_first: bool = False,
+    sync_after: bool = True,
+    sentence_audio_url: Optional[str] = None,
+) -> dict:
+    """Add a V + S card pair. Thin wrapper over `add_cards()`."""
+    return add_cards(
+        expression=expression, meaning=meaning,
+        sentence=sentence, reading_sentence=reading_sentence,
+        image_query=image_query, i_know_id=i_know_id, skip_image=skip_image,
+        ensure_deck_first=ensure_deck_first, sync_after=sync_after,
+        sentence_audio_url=sentence_audio_url,
+    )
+
+
 def add_vocab_only(
     expression: str,
     meaning: str,
@@ -476,55 +525,28 @@ def add_vocab_only(
     ensure_deck_first: bool = False,
     sync_after: bool = True,
 ) -> dict:
-    """Add a Vocabulary (V) card only — no Sentence (S) card.
+    """Add a Vocabulary (V) card only. Thin wrapper over `add_cards()`."""
+    return add_cards(
+        expression=expression, meaning=meaning, image_query=image_query,
+        i_know_id=i_know_id, skip_image=skip_image,
+        ensure_deck_first=ensure_deck_first, sync_after=sync_after,
+    )
 
-    Same pipeline as `add_card_pair` minus everything sentence-related: TTS →
-    image (optional) → media → vocab note → sync. Use when the user wants a
-    standalone word with no example sentence. Returns a summary dict with
-    `sentence_note_id` set to None for shape-compatibility with `add_card_pair`.
-    """
-    iknow_id = next_iknow_id(i_know_id)
-    print(f"[id] using iKnowID={iknow_id}")
 
-    if ensure_deck_first:
-        print(f"[deck] ensure_deck({DECK!r})")
-        ensure_deck()
-
-    # 1. Audio (vocab only)
-    vocab_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-vocab.mp3"
-    print("[tts] generating vocab audio...")
-    generate_audio(vocab_mp3, expression)
-
-    # 2. Image
-    image_media: Optional[str] = None
-    if skip_image or not image_query:
-        print("[image] skipped (vocab-only, no image query)")
-    else:
-        img_path = find_image(image_query)
-        if img_path is not None:
-            print(f"[image] importing {img_path}")
-            image_media = store_media(f"iknow-{iknow_id}-image.png", img_path)
-        else:
-            print(f"[image] no image for {image_query!r}; card will have no image")
-
-    # 3. Audio media
-    print("[media] importing audio...")
-    store_media(f"iknow-{iknow_id}-vocab.mp3", vocab_mp3)
-
-    # 4. Note (V only)
-    print("[notes] adding vocab card...")
-    v_note = build_vocab_note(iknow_id, expression, meaning, image_media)
-    v_id = add_note(v_note)
-    print(f"[notes] vocab id={v_id}")
-
-    # 5. Sync
-    if sync_after:
-        print("[sync] syncing Anki...")
-        sync()
-
-    return {
-        "iKnowID": iknow_id,
-        "vocab_note_id": v_id,
-        "sentence_note_id": None,
-        "image_media": image_media,
-    }
+def add_sentence_only(
+    sentence: str,
+    reading_sentence: str,
+    image_query: Optional[str] = None,
+    i_know_id: Optional[int] = None,
+    skip_image: bool = False,
+    ensure_deck_first: bool = False,
+    sync_after: bool = True,
+    sentence_audio_url: Optional[str] = None,
+) -> dict:
+    """Add a Sentence (S) card only. Thin wrapper over `add_cards()`."""
+    return add_cards(
+        sentence=sentence, reading_sentence=reading_sentence,
+        image_query=image_query, i_know_id=i_know_id, skip_image=skip_image,
+        ensure_deck_first=ensure_deck_first, sync_after=sync_after,
+        sentence_audio_url=sentence_audio_url,
+    )

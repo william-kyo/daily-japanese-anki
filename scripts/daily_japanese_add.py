@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """
-CLI for adding a Daily Japanese iKnow! card pair (V + S).
+CLI for adding Daily Japanese iKnow! cards (V only, S only, or V + S).
 
-Thin wrapper around anki_vocab_lib.add_card_pair(). All the actual work —
+Thin wrapper around anki_vocab_lib.add_cards(). All the actual work —
 TTS, image search, Anki media import, notes, sync, state — lives in the
 library so it can be reused (tests, bulk import, cron jobs, etc.).
+
+Card shape is auto-detected from which args you pass — there is no mode flag:
+  - V only:  --expression --meaning
+  - S only:  --sentence --reading-sentence
+  - V + S:   all four
+This CLI covers every shape. Do NOT hand-roll a one-off driver script to add
+a card — that path skips the venv re-exec, the Anki sync, and id ordering.
 
 Deck policy (declared 2026-06-06 by kyo):
   Cards always go into the existing `Daily Japanese` deck. Never call
@@ -12,13 +19,25 @@ Deck policy (declared 2026-06-06 by kyo):
   only exception: it (idempotently) ensures `Daily Japanese` itself exists,
   for the rare fresh-Anki-install case.
 
-Usage:
+Usage (V + S):
   python3 daily_japanese_add.py \\
       --expression "やわらげる" \\
       --meaning "激しい感情を穏やかにする" \\
       --sentence "僕は奥さんの怒りを和らげた。" \\
       --reading-sentence "ぼく は おくさん の いかり を やわらげた。" \\
       --image-query "couple argument"
+
+Usage (V only):
+  python3 daily_japanese_add.py \\
+      --expression "横ばい" \\
+      --meaning "数値や状態が上にも下にも動かず、ほぼ同じ水準で続くこと。" \\
+      --no-image
+
+Usage (S only):
+  python3 daily_japanese_add.py \\
+      --sentence "黒字と赤字の境界線を見極める。" \\
+      --reading-sentence "くろじ と あかじ の きょうかいせん を みきわめる。" \\
+      --no-image
 
 Notes:
   - --iKnowID is optional; if omitted the next available id is computed at
@@ -79,18 +98,18 @@ import anki_vocab_lib as lib  # noqa: E402
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    p.add_argument("--expression", required=True,
-                   help="vocabulary word/phrase (Japanese)")
-    p.add_argument("--meaning", required=True,
-                   help="simple Japanese explanation (N3 or below)")
+    p.add_argument("--expression", default=None,
+                   help="vocabulary word/phrase (Japanese). Pair with --meaning "
+                        "to build a V card.")
+    p.add_argument("--meaning", default=None,
+                   help="simple Japanese explanation (N3 or below). Pair with "
+                        "--expression to build a V card.")
     p.add_argument("--sentence", default=None,
-                   help="example sentence (Japanese); required unless --vocab-only")
+                   help="example sentence (Japanese). Pair with --reading-sentence "
+                        "to build an S card.")
     p.add_argument("--reading-sentence", default=None,
-                   help="kana reading of the sentence with spaces between words; "
-                        "required unless --vocab-only")
-    p.add_argument("--vocab-only", action="store_true",
-                   help="add only the Vocabulary (V) card, no Sentence (S) card. "
-                        "Sentence args are not required in this mode.")
+                   help="kana reading of the sentence with spaces between words. "
+                        "Pair with --sentence to build an S card.")
     p.add_argument("--image-query", default=None,
                    help="search query for the illustration "
                         "(required unless --no-image is set)")
@@ -112,37 +131,33 @@ def main() -> int:
     if not args.no_image and not args.image_query:
         p.error("--image-query is required unless --no-image is set")
 
-    if args.vocab_only:
-        if args.sentence or args.reading_sentence or args.sentence_audio_url:
-            p.error("--sentence/--reading-sentence/--sentence-audio-url are not "
-                    "allowed with --vocab-only")
-    elif not args.sentence or not args.reading_sentence:
-        p.error("--sentence and --reading-sentence are required unless --vocab-only")
+    # Card shape is auto-detected from which args are supplied. Each side must
+    # be given as a complete pair; at least one complete card is required.
+    if bool(args.expression) != bool(args.meaning):
+        p.error("--expression and --meaning must be given together (V card)")
+    if bool(args.sentence) != bool(args.reading_sentence):
+        p.error("--sentence and --reading-sentence must be given together (S card)")
+    want_v = bool(args.expression) and bool(args.meaning)
+    want_s = bool(args.sentence) and bool(args.reading_sentence)
+    if not want_v and not want_s:
+        p.error("provide a V card (--expression --meaning), an S card "
+                "(--sentence --reading-sentence), or both")
+    if args.sentence_audio_url and not want_s:
+        p.error("--sentence-audio-url requires --sentence/--reading-sentence")
 
     try:
-        if args.vocab_only:
-            result = lib.add_vocab_only(
-                expression=args.expression,
-                meaning=args.meaning,
-                image_query=args.image_query,
-                i_know_id=args.iKnowID,
-                skip_image=args.no_image,
-                ensure_deck_first=args.ensure_deck,
-                sync_after=not args.no_sync,
-            )
-        else:
-            result = lib.add_card_pair(
-                expression=args.expression,
-                meaning=args.meaning,
-                sentence=args.sentence,
-                reading_sentence=args.reading_sentence,
-                image_query=args.image_query,
-                i_know_id=args.iKnowID,
-                skip_image=args.no_image,
-                ensure_deck_first=args.ensure_deck,
-                sync_after=not args.no_sync,
-                sentence_audio_url=args.sentence_audio_url,
-            )
+        result = lib.add_cards(
+            expression=args.expression,
+            meaning=args.meaning,
+            sentence=args.sentence,
+            reading_sentence=args.reading_sentence,
+            image_query=args.image_query,
+            i_know_id=args.iKnowID,
+            skip_image=args.no_image,
+            ensure_deck_first=args.ensure_deck,
+            sync_after=not args.no_sync,
+            sentence_audio_url=args.sentence_audio_url,
+        )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

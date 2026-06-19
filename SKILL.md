@@ -32,7 +32,7 @@ Each new entry becomes **one Vocabulary card + one Sentence card** sharing a sin
 
 ## The pipeline
 
-The full workflow is wrapped in `scripts/anki_vocab_lib.py` (library) and exposed by `scripts/daily_japanese_add.py` (CLI). **Prefer the CLI for the common case** — it handles state, retries, sync, and ordering. Reach into the library directly only for tests, bulk import, or unusual flows.
+The full workflow is wrapped in `scripts/anki_vocab_lib.py` (library) and exposed by `scripts/daily_japanese_add.py` (CLI). **Always use the CLI to add a card** — it handles the venv re-exec, id ordering, sync, and the V/S/V+S shapes. Reach into the library directly only for tests, bulk import, or cron. **Do not write a throwaway driver script for a single card** — the CLI already covers every shape (see below).
 
 ### Default recipe (CLI)
 
@@ -68,17 +68,31 @@ python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
   --no-image
 ```
 
-For a standalone word with no example sentence, use `--vocab-only` — it adds just the Vocabulary (V) card and skips the Sentence (S) card. Sentence args are not required (and not allowed) in this mode:
+**Card shape is auto-detected from which args you pass** — there is no mode flag. The same CLI does all three:
+
+- **V only** — pass `--expression --meaning` (no sentence args):
 
 ```bash
 python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
   --expression "芥川" \
   --meaning "芥川龍之介のように、文学や芸術の世界で名声を得た人の名字。" \
-  --vocab-only \
   --no-image
 ```
 
-Prefer this over hand-rolling an inline `python3 -c` script: the CLI re-execs under the venv (so `pykakasi` resolves), syncs, and handles iKnowID ordering — an ad-hoc importer skips all of that.
+- **S only** — pass `--sentence --reading-sentence` (no vocab args):
+
+```bash
+python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
+  --sentence "黒字と赤字の境界線となる損益分岐点を見極めることが重要だ。" \
+  --reading-sentence "くろじ と あかじ の きょうかいせん と なる そんえきぶんきてん を みきわめる ことが じゅうようだ。" \
+  --image-query "break even chart"
+```
+
+- **V + S** — pass all four (the examples above/below).
+
+Each side must be a complete pair; passing one without its partner is an error. At least one complete card is required.
+
+> ⚠️ **Never hand-roll a one-off driver script** (e.g. `python3 -c "import anki_vocab_lib..."` or a throwaway `add_*.py`) to add a card. This CLI already covers V-only, S-only, and V+S. An ad-hoc importer skips the venv re-exec (→ `No module named 'pykakasi'`), the pre-read + final Anki sync, and iKnowID ordering — every past breakage came from this. If you think you need a custom script, you don't.
 
 For a fresh Anki install where `Daily Japanese` doesn't exist yet, add `--ensure-deck`:
 
@@ -138,8 +152,8 @@ If you want the scripts in a different location, override the workspace root wit
 
 ## Templates and scripts
 
-- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Auto iKnowID from state, image search by default (`--no-image` to skip), `--vocab-only` for a V-only card (no sentence), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card.**
-- `scripts/anki_vocab_lib.py` — the library: `add_card_pair()`, `add_vocab_only()`, `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import this if you're wiring Anki ops into a different driver (tests, bulk import, cron).
+- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Card shape (V / S / V+S) is **auto-detected** from which args you pass. Auto iKnowID from Anki, image search by default (`--no-image` to skip), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card — never write a throwaway driver script.**
+- `scripts/anki_vocab_lib.py` — the library. One unified pipeline `add_cards(expression?, meaning?, sentence?, reading_sentence?, ...)` builds whichever of V/S is requested; `add_card_pair()`, `add_vocab_only()`, `add_sentence_only()` are thin wrappers over it. Also `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import only for tests/bulk/cron — for a single card, use the CLI.
 - `templates/note_vocab.json` and `templates/note_sentence.json` — exact field shapes to copy.
 - `references/troubleshooting.md` — failure transcripts and detailed recovery recipes (irasutoya atom feed, ffmpeg resize, etc.).
 
