@@ -83,10 +83,14 @@ def main() -> int:
                    help="vocabulary word/phrase (Japanese)")
     p.add_argument("--meaning", required=True,
                    help="simple Japanese explanation (N3 or below)")
-    p.add_argument("--sentence", required=True,
-                   help="example sentence (Japanese)")
-    p.add_argument("--reading-sentence", required=True,
-                   help="kana reading of the sentence with spaces between words")
+    p.add_argument("--sentence", default=None,
+                   help="example sentence (Japanese); required unless --vocab-only")
+    p.add_argument("--reading-sentence", default=None,
+                   help="kana reading of the sentence with spaces between words; "
+                        "required unless --vocab-only")
+    p.add_argument("--vocab-only", action="store_true",
+                   help="add only the Vocabulary (V) card, no Sentence (S) card. "
+                        "Sentence args are not required in this mode.")
     p.add_argument("--image-query", default=None,
                    help="search query for the illustration "
                         "(required unless --no-image is set)")
@@ -108,19 +112,37 @@ def main() -> int:
     if not args.no_image and not args.image_query:
         p.error("--image-query is required unless --no-image is set")
 
+    if args.vocab_only:
+        if args.sentence or args.reading_sentence or args.sentence_audio_url:
+            p.error("--sentence/--reading-sentence/--sentence-audio-url are not "
+                    "allowed with --vocab-only")
+    elif not args.sentence or not args.reading_sentence:
+        p.error("--sentence and --reading-sentence are required unless --vocab-only")
+
     try:
-        result = lib.add_card_pair(
-            expression=args.expression,
-            meaning=args.meaning,
-            sentence=args.sentence,
-            reading_sentence=args.reading_sentence,
-            image_query=args.image_query,
-            i_know_id=args.iKnowID,
-            skip_image=args.no_image,
-            ensure_deck_first=args.ensure_deck,
-            sync_after=not args.no_sync,
-            sentence_audio_url=args.sentence_audio_url,
-        )
+        if args.vocab_only:
+            result = lib.add_vocab_only(
+                expression=args.expression,
+                meaning=args.meaning,
+                image_query=args.image_query,
+                i_know_id=args.iKnowID,
+                skip_image=args.no_image,
+                ensure_deck_first=args.ensure_deck,
+                sync_after=not args.no_sync,
+            )
+        else:
+            result = lib.add_card_pair(
+                expression=args.expression,
+                meaning=args.meaning,
+                sentence=args.sentence,
+                reading_sentence=args.reading_sentence,
+                image_query=args.image_query,
+                i_know_id=args.iKnowID,
+                skip_image=args.no_image,
+                ensure_deck_first=args.ensure_deck,
+                sync_after=not args.no_sync,
+                sentence_audio_url=args.sentence_audio_url,
+            )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

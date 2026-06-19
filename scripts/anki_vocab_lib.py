@@ -208,11 +208,43 @@ def find_image(query: str) -> Optional[Path]:
 _KAKASI = None
 
 
+def _import_pykakasi():
+    """Import pykakasi, self-healing when the active interpreter lacks it.
+
+    pykakasi is installed in the skill's venv (default ~/.venvs/edge-tts, see
+    install.sh). The CLI entrypoint re-execs under that venv, but ad-hoc callers
+    that `import anki_vocab_lib` under a bare system python3 don't get that
+    protection. Rather than fail with `No module named 'pykakasi'`, we locate
+    the venv's site-packages and add it to sys.path, then retry. Honors
+    EDGE_TTS_VENV. This makes the library safe to import from ANY interpreter.
+    """
+    try:
+        import pykakasi  # type: ignore
+        return pykakasi
+    except ModuleNotFoundError:
+        pass
+    import glob
+    import sys
+    venv = Path(os.environ.get("EDGE_TTS_VENV", "~/.venvs/edge-tts")).expanduser()
+    # CPython lays site-packages out as lib/pythonX.Y/site-packages.
+    for site in sorted(glob.glob(str(venv / "lib" / "python*" / "site-packages"))):
+        if site not in sys.path:
+            sys.path.append(site)
+    try:
+        import pykakasi  # type: ignore
+        return pykakasi
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            f"pykakasi not importable and not found under {venv}. "
+            f"Run install.sh, or set EDGE_TTS_VENV to the venv that has it."
+        ) from e
+
+
 def _get_kakasi():
     """Lazy-init pykakasi (the conversion is JIT-expensive)."""
     global _KAKASI
     if _KAKASI is None:
-        import pykakasi  # type: ignore
+        pykakasi = _import_pykakasi()
         _KAKASI = pykakasi.kakasi()
     return _KAKASI
 
@@ -431,5 +463,68 @@ def add_card_pair(
         "iKnowID": iknow_id,
         "vocab_note_id": v_id,
         "sentence_note_id": s_id,
+        "image_media": image_media,
+    }
+
+
+def add_vocab_only(
+    expression: str,
+    meaning: str,
+    image_query: Optional[str] = None,
+    i_know_id: Optional[int] = None,
+    skip_image: bool = False,
+    ensure_deck_first: bool = False,
+    sync_after: bool = True,
+) -> dict:
+    """Add a Vocabulary (V) card only — no Sentence (S) card.
+
+    Same pipeline as `add_card_pair` minus everything sentence-related: TTS →
+    image (optional) → media → vocab note → sync. Use when the user wants a
+    standalone word with no example sentence. Returns a summary dict with
+    `sentence_note_id` set to None for shape-compatibility with `add_card_pair`.
+    """
+    iknow_id = next_iknow_id(i_know_id)
+    print(f"[id] using iKnowID={iknow_id}")
+
+    if ensure_deck_first:
+        print(f"[deck] ensure_deck({DECK!r})")
+        ensure_deck()
+
+    # 1. Audio (vocab only)
+    vocab_mp3 = TTS_OUT_DIR / f"iknow-{iknow_id}-vocab.mp3"
+    print("[tts] generating vocab audio...")
+    generate_audio(vocab_mp3, expression)
+
+    # 2. Image
+    image_media: Optional[str] = None
+    if skip_image or not image_query:
+        print("[image] skipped (vocab-only, no image query)")
+    else:
+        img_path = find_image(image_query)
+        if img_path is not None:
+            print(f"[image] importing {img_path}")
+            image_media = store_media(f"iknow-{iknow_id}-image.png", img_path)
+        else:
+            print(f"[image] no image for {image_query!r}; card will have no image")
+
+    # 3. Audio media
+    print("[media] importing audio...")
+    store_media(f"iknow-{iknow_id}-vocab.mp3", vocab_mp3)
+
+    # 4. Note (V only)
+    print("[notes] adding vocab card...")
+    v_note = build_vocab_note(iknow_id, expression, meaning, image_media)
+    v_id = add_note(v_note)
+    print(f"[notes] vocab id={v_id}")
+
+    # 5. Sync
+    if sync_after:
+        print("[sync] syncing Anki...")
+        sync()
+
+    return {
+        "iKnowID": iknow_id,
+        "vocab_note_id": v_id,
+        "sentence_note_id": None,
         "image_media": image_media,
     }

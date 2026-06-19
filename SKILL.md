@@ -68,6 +68,18 @@ python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
   --no-image
 ```
 
+For a standalone word with no example sentence, use `--vocab-only` — it adds just the Vocabulary (V) card and skips the Sentence (S) card. Sentence args are not required (and not allowed) in this mode:
+
+```bash
+python3 ~/.agents/skills/daily-japanese-anki/scripts/daily_japanese_add.py \
+  --expression "芥川" \
+  --meaning "芥川龍之介のように、文学や芸術の世界で名声を得た人の名字。" \
+  --vocab-only \
+  --no-image
+```
+
+Prefer this over hand-rolling an inline `python3 -c` script: the CLI re-execs under the venv (so `pykakasi` resolves), syncs, and handles iKnowID ordering — an ad-hoc importer skips all of that.
+
 For a fresh Anki install where `Daily Japanese` doesn't exist yet, add `--ensure-deck`:
 
 ```bash
@@ -126,8 +138,8 @@ If you want the scripts in a different location, override the workspace root wit
 
 ## Templates and scripts
 
-- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Auto iKnowID from state, image search by default (`--no-image` to skip), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card.**
-- `scripts/anki_vocab_lib.py` — the library: `add_card_pair()`, `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import this if you're wiring Anki ops into a different driver (tests, bulk import, cron).
+- `scripts/daily_japanese_add.py` — CLI for the `Daily Japanese` deck. Auto iKnowID from state, image search by default (`--no-image` to skip), `--vocab-only` for a V-only card (no sentence), `--ensure-deck` for the rare fresh-install case. **Use this for every new iKnow! card.**
+- `scripts/anki_vocab_lib.py` — the library: `add_card_pair()`, `add_vocab_only()`, `find_image()`, `generate_audio()`, `download_audio()`, `store_media()`, `ensure_deck()`, `build_vocab_note()`, `build_sentence_note()`, `next_iknow_id_from_anki()`, `_existing_iknow_ids()`. Import this if you're wiring Anki ops into a different driver (tests, bulk import, cron).
 - `templates/note_vocab.json` and `templates/note_sentence.json` — exact field shapes to copy.
 - `references/troubleshooting.md` — failure transcripts and detailed recovery recipes (irasutoya atom feed, ffmpeg resize, etc.).
 
